@@ -14,19 +14,14 @@
 
 import torch
 import numpy as np
-from mlperf_logging import mllog
-from mlperf_logging.mllog import constants as mllog_const
-mllogger = mllog.get_mllogger()
-mllog.config(
-    filename=(os.getenv("COMPLIANCE_FILE") or "mlperf_compliance.log"),
-    root_dir=os.path.normpath(os.path.dirname(os.path.realpath(__file__))))
-    
+from mlperf_compliance import mlperf_log
+
 def ssd_print(*args, sync=True, **kwargs):
     if sync:
         barrier()
     if get_rank() == 0:
         kwargs['stack_offset'] = 2
-        mllogger.event(*args, **kwargs)
+        mlperf_log.ssd_print(*args, **kwargs)
 
 
 def barrier():
