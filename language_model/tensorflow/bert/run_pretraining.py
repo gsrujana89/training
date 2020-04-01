@@ -12,6 +12,14 @@ from tensorflow.contrib import cluster_resolver as contrib_cluster_resolver
 from tensorflow.contrib import data as contrib_data
 from tensorflow.contrib import tpu as contrib_tpu
 
+from mlperf_logging import mllog
+from mlperf_logging.mllog import constants as mllog_const
+
+mllogger = mllog.get_mllogger()
+mllog.config(
+    filename=(os.getenv("COMPLIANCE_FILE") or "mlperf_compliance.log"),
+    root_dir=os.path.normpath(os.path.dirname(os.path.realpath(__file__))))
+
 flags = tf.flags
 
 FLAGS = flags.FLAGS
@@ -197,6 +205,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
             labels=masked_lm_ids,
             predictions=masked_lm_predictions,
             weights=masked_lm_weights)
+        mllogger.event(key=mllog_const.EVAL_ACCURACY, value=masked_lm_accuracy)
         masked_lm_mean_loss = tf.metrics.mean(
             values=masked_lm_example_loss, weights=masked_lm_weights)
 
@@ -402,6 +411,7 @@ def _decode_record(record, name_to_features):
 
 
 def main(_):
+  mllogger.start(key=mllog_const.INIT_START)
   tf.logging.set_verbosity(tf.logging.INFO)
 
   if not FLAGS.do_train and not FLAGS.do_eval:
@@ -435,7 +445,10 @@ def main(_):
           iterations_per_loop=FLAGS.iterations_per_loop,
           num_shards=FLAGS.num_tpu_cores,
           per_host_input_for_training=is_per_host))
-
+  mllogger.event(key=mllog_const.OPT_LR_WARMUP_STEPS, value=FLAGS.num_warmup_steps)
+  mllogger.event(key=mllog_const.OPT_BASE_LR, value=FLAGS.learning_rate)
+  mllogger.event(key=mllog_const.OPT_NAME,
+                   value=FLAGS.optimizer)
   model_fn = model_fn_builder(
       bert_config=bert_config,
       init_checkpoint=FLAGS.init_checkpoint,
@@ -456,16 +469,24 @@ def main(_):
       config=run_config,
       train_batch_size=FLAGS.train_batch_size,
       eval_batch_size=FLAGS.eval_batch_size)
-
+  mllogger.stop(key=mllog_const.INIT_STOP)
+    mllogger.start(key=mllog_const.RUN_START)
   if FLAGS.do_train:
     tf.logging.info("***** Running training *****")
     tf.logging.info("  Batch size = %d", FLAGS.train_batch_size)
+    mllogger.event(key=mllog_const.GLOBAL_BATCH_SIZE, value=FLAGS.train_batch_size)
+    mllogger.event(key=mllog_const.MAX_SEQUENCE_LENGTH, value=FLAGS.max_seq_length)
+    mllogger.event(key=mllog_const.MAX_PREDICTIONS_PER_SEQ, value=FLAGS.max_predictions_per_seq)
     train_input_fn = input_fn_builder(
         input_files=input_files,
         max_seq_length=FLAGS.max_seq_length,
         max_predictions_per_seq=FLAGS.max_predictions_per_seq,
         is_training=True)
+    mllogger.start(
+      key=mllog_const.BLOCK_START)
     estimator.train(input_fn=train_input_fn, max_steps=FLAGS.num_train_steps)
+    mllogger.stop(
+        key=mllog_const.BLOCK_STOP)
 
   if FLAGS.do_eval:
     tf.logging.info("***** Running evaluation *****")
@@ -477,10 +498,13 @@ def main(_):
         max_predictions_per_seq=FLAGS.max_predictions_per_seq,
         is_training=False)
 
+    mllogger.start(
+        key=mllog_const.EVAL_START)
     while True:
       result = estimator.evaluate(
           input_fn=eval_input_fn, steps=FLAGS.max_eval_steps)
-
+    mllogger.stop(
+        key=mllog_const.EVAL_STOP)
       output_eval_file = os.path.join(FLAGS.output_dir, "eval_results.txt")
       with tf.gfile.GFile(output_eval_file, "w") as writer:
         tf.logging.info("***** Eval results *****")
@@ -488,6 +512,7 @@ def main(_):
           tf.logging.info("  %s = %s", key, str(result[key]))
           writer.write("%s = %s\n" % (key, str(result[key])))
 
+    mllogger.stop(key=mllog_const.RUN_STOP)
 
 if __name__ == "__main__":
   flags.mark_flag_as_required("input_file")

@@ -10,7 +10,13 @@ import tensorflow.compat.v1 as tf
 from tensorflow.contrib import tpu as contrib_tpu
 
 import lamb_optimizer_v1 as lamb_optimizer
+from mlperf_logging import mllog
+from mlperf_logging.mllog import constants as mllog_const
 
+mllogger = mllog.get_mllogger()
+mllog.config(
+    filename=(os.getenv("COMPLIANCE_FILE") or "mlperf_compliance.log"),
+    root_dir=os.path.normpath(os.path.dirname(os.path.realpath(__file__))))
 
 def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps, use_tpu,
                      optimizer='adamw', poly_power=1.0, start_warmup_step=0):
@@ -48,7 +54,8 @@ def create_optimizer(loss, init_lr, num_train_steps, num_warmup_steps, use_tpu,
     is_warmup = tf.cast(global_steps_int < warmup_steps_int, tf.float32)
     learning_rate = (
         (1.0 - is_warmup) * learning_rate + is_warmup * warmup_learning_rate)
-
+    mllogger.event(key=mllog_const.OPT_LR_WARMUP_STEPS,
+                value=warmup_learning_rate )
   # It is OK that you use this optimizer for finetuning, since this
   # is how the model was trained (note that the Adam m/v variables are NOT
   # loaded from init_checkpoint.)
@@ -118,7 +125,10 @@ class AdamWeightDecayOptimizer(tf.train.Optimizer):
     self.beta_2 = beta_2
     self.epsilon = epsilon
     self.exclude_from_weight_decay = exclude_from_weight_decay
-
+    mllogger.event(key=mllog_const.OPT_ADAM_BETA1,
+            value=self.beta_1)
+    mllogger.event(key=mllog_const.OPT_ADAM_BETA2,
+        value=self.beta_2)
   def apply_gradients(self, grads_and_vars, global_step=None, name=None):
     """See base class."""
     assignments = []

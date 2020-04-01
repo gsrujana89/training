@@ -22,6 +22,13 @@ from tensorflow.python.ops import state_ops
 from tensorflow.python.training import optimizer
 # pylint: enable=g-direct-tensorflow-import
 
+from mlperf_logging import mllog
+from mlperf_logging.mllog import constants as mllog_const
+
+mllogger = mllog.get_mllogger()
+mllog.config(
+    filename=(os.getenv("COMPLIANCE_FILE") or "mlperf_compliance.log"),
+    root_dir=os.path.normpath(os.path.dirname(os.path.realpath(__file__))))
 
 class LAMBOptimizer(optimizer.Optimizer):
   """Optimizer that implements the LAMBOptimizer as tf.train.Optimizer."""
@@ -43,6 +50,12 @@ class LAMBOptimizer(optimizer.Optimizer):
     self._epsilon = epsilon
     self._weight_decay_rate = weight_decay_rate
     self.exclude_from_weight_decay = exclude_from_weight_decay
+    mllogger.event(key=mllog_const.OPT_LAMB_BETA1,
+        value=self.beta_1)
+    mllogger.event(key=mllog_const.OPT_LAMB_BETA2,
+        value=self.beta_2)
+    mllogger.event(key=mllog_const.OPT_LAMB_LR_DECAY_POLY_POWER,
+        value=self._weight_decay_rate)
     # exclude_from_layer_adaptation is set to exclude_from_weight_decay if the
     # arg is None.
     if exclude_from_layer_adaptation:
